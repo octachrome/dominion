@@ -13,8 +13,9 @@ class Card:
         self.victory = victory
         self.action = action
 
-    def enumActions(self, hand, results):
-        if not self.action: return
+    def enumActions(self, hand):
+        assert self.action
+        return self.action.enumActions(hand)
 
 #miningVillage = Card('mining-village', action=Choose(3, [
 #    GainCards(1),
@@ -28,7 +29,14 @@ class Card:
 #]))
 
 class Nobles:
-    pass
+    def enumActions(self, hand):
+        h1 = hand.clone()
+        h1.actions += 2
+
+        h2 = hand.clone()
+        h2.gainedCards += 3
+
+        return [h1, h2]
 
 CARDS = {
     '$1': Card(cost=0, cash=1),
@@ -53,12 +61,16 @@ class Deck:
     def draw(self):
         if not self.deck:
             self.shuffle()
+        if not self.deck:
+            return None
         return self.deck.pop()
 
     def deal(self, count):
         hand = []
         for i in range(count):
-            hand.append(self.draw())
+            card = self.draw()
+            if card:
+                hand.append(card)
         return hand
 
     def discard(self, card):
@@ -86,11 +98,27 @@ class Deck:
         return victory
 
 class Hand:
-    def __init__(self, deck):
-        self.hand = deck.deal(5)
-        log('hand', 'Dealt hand: %s', self.hand)
-        self.played = []
+    def __init__(self, deck=None, sourceHand=None):
+        if sourceHand:
+            assert deck == None
+            self.hand = list(sourceHand.hand)
+            self.played = list(sourceHand.played)
+            self.actions = sourceHand.actions
+            self.gainedCards = sourceHand.gainedCards
+        else:
+            assert deck != None
+            self.hand = deck.deal(5)
+            log('hand', 'Dealt hand: %s', self.hand)
+            self.played = []
+            self.actions = 1;
+            self.gainedCards = 0
         self.collateCards()
+
+    def __repr__(self):
+        return 'Hand(hand=%r,actions=%r,gainedCards=%r,played=%r)' % (self.hand, self.actions, self.gainedCards, self.played)
+
+    def clone(self):
+        return Hand(sourceHand=self)
 
     def collateCards(self):
         self.collated = {}
@@ -149,17 +177,32 @@ class Hand:
         self.discardPlayed(deck)
         self.discardHand(deck)
 
-    def enumActions(self, results):
+    def enumActions(self):
         if self.actions == 0 or self.countActions() == 0:
-            results.append(self)
-            return
+            return [self]
         # we have an action to use, and a card to play it with
-        for card in self.actionCards():
-            hand = Hand(self)
-            CARDS[card].enumActions(hand, results)
+        results = []
+        for c in self.collated:
+            card = CARDS[c]
+            if card.action:
+                hand = self.clone()
+                hand.play(c)
+                hand.actions -= 1
+                # list of possible hands resulting from playing the card in different ways
+                possibleHands = card.enumActions(hand)
+                # now play more hands
+                for possibleHand in possibleHands:
+                    # continue to play more actions if there are any
+                    results += possibleHand.enumActions()
+        return results
 
         # there is always the option to do nothing
         # results.append(self)
+
+    def drawGainedCards(self, deck):
+        if self.gainedCards:
+            self.draw(deck, self.gainedCards)
+        self.gainedCards = 0
 
 class Table:
     def __init__(self, stacks):
@@ -186,6 +229,17 @@ class Table:
         self.stacks[card] -= 1
         deck.discard(card)
 
+def bestHand(hands):
+    best = None
+    for hand in hands:
+        if not best:
+            best = hand
+        elif hand.gainedCards > best.gainedCards:
+            best = hand
+        elif hand.gainedCards == best.gainedCards and hand.actions > best.actions:
+            best = hand
+    return best
+
 class Player:
     def __init__(self, table, provinceDelay=0):
         self.table = table
@@ -195,7 +249,7 @@ class Player:
 
     def playHand(self, buy=True):
         hand = Hand(self.deck)
-        self.playActions(hand)
+        hand = self.playActions(hand)
         cash = hand.countCash()
         if buy:
             self.playBuys(hand)
@@ -203,17 +257,13 @@ class Player:
         return cash
 
     def playActions(self, hand):
-        actions = 1
-        while actions > 0 and hand.count('nobles') > 0:
-            if actions == 1 and hand.count('nobles') > 1:
-                log('action', 'Playing nobles for 2 actions')
-                hand.play('nobles')
-                actions += 1    # subtract 1 for playing nobles, add 2 for the actions
-            else:
-                log('action', 'Playing nobles for 3 cards')
-                hand.play('nobles')
-                hand.draw(self.deck, 3)
-                actions -= 1
+        # this is too eager - it plays several actions without determining the outcome (cards drawn) after the first
+        while hand.actions > 0 and hand.countActions() > 0:
+            results = hand.enumActions()
+            hand = bestHand(results)
+            log('play', 'Played hand: %r' % hand)
+            hand.drawGainedCards(self.deck)
+        return hand
 
     def playBuys(self, hand):
         cash = hand.countCash()
@@ -265,13 +315,13 @@ class Player:
 
 MAX_HANDS = 50
 
-def playGame():
+def playGame(firstPlayer=0):
     table = Table({'$2': 100, '$3': 100, 'nobles': 12, 'province': 12})
     players = [Player(table, 3), Player(table, 0)]
 
     hands = 0
     while not table.isGameEnd() and hands < MAX_HANDS:
-        p = hands % len(players)
+        p = (hands + firstPlayer) % len(players)
         players[p].playHand()
         hands += 1
 
@@ -294,7 +344,7 @@ def playGame():
 def bestOf(games=500):
     wins = [0, 0]
     for i in range(games):
-        result = playGame()
+        result = playGame(i % 2)
         if result >= 0:
             wins[result] += 1
     print wins
@@ -305,6 +355,7 @@ logging.getLogger('action').setLevel(logging.WARNING)
 logging.getLogger('cash').setLevel(logging.WARNING)
 logging.getLogger('buy').setLevel(logging.WARNING)
 logging.getLogger('game').setLevel(logging.WARNING)
+logging.getLogger('play').setLevel(logging.WARNING)
 
 if __name__ == '__main__':
     bestOf()
