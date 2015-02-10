@@ -43,7 +43,7 @@ CARDS = {
     '$2': Card(cost=3, cash=2),
     '$3': Card(cost=6, cash=3),
     'estate': Card(cost=2, victory=1),
-    'province': Card(cost=12, victory=6),
+    'province': Card(cost=8, victory=6),
     'nobles': Card(cost=6, victory=2, action=Nobles())
 }
 
@@ -55,8 +55,13 @@ class Deck:
             for i in range(quantity):
                 deck.append(card)
         random.shuffle(deck)
+        # cards which are waiting to be dealt
         self.deck = deck
+        # cards which have been discarded
         self.discards = []
+        # count of each card type, including the deck, discards, and those in play
+        # (cards being played in the current hand are not included in deck or discards)
+        self.cards = dict(cards)
 
     def draw(self):
         if not self.deck:
@@ -73,6 +78,13 @@ class Deck:
                 hand.append(card)
         return hand
 
+    def gain(self, card):
+        if card in self.cards:
+            self.cards[card] += 1
+        else:
+            self.cards[card] = 1
+        self.discards.append(card)
+
     def discard(self, card):
         self.discards.append(card)
 
@@ -81,20 +93,22 @@ class Deck:
         self.discards = []
         random.shuffle(self.deck)
 
-    def allCards(self):
-        return self.deck + self.discards
-
     def count(self, card):
+        if card in self.cards:
+            return self.cards[card]
+        else:
+            return 0
+
+    def size(self):
         total = 0
-        for c in self.deck:
-            if c == card:
-                total += 1
+        for card in self.cards:
+            total += self.cards[card]
         return total
 
     def countVictory(self):
         victory = 0
-        for card in self.allCards():
-            victory += CARDS[card].victory
+        for card in self.cards:
+            victory += CARDS[card].victory * self.cards[card]
         return victory
 
 class Hand:
@@ -227,7 +241,7 @@ class Table:
     def buy(self, card, deck):
         assert self.count(card) > 0
         self.stacks[card] -= 1
-        deck.discard(card)
+        deck.gain(card)
 
 def bestHand(hands):
     best = None
@@ -241,11 +255,11 @@ def bestHand(hands):
     return best
 
 class Player:
-    def __init__(self, table, provinceDelay=0):
+    def __init__(self, table, cardPrefs):
         self.table = table
         self.deck = Deck({'$1': 5, 'estate': 3})
-        self.toggle = 0
-        self.provinceDelay = provinceDelay
+        self.toggle2 = self.toggle = random.randrange(2)
+        self.cardPrefs = cardPrefs
 
     def playHand(self, buy=True):
         hand = Hand(self.deck)
@@ -267,23 +281,28 @@ class Player:
 
     def playBuys(self, hand):
         cash = hand.countCash()
-        log('cash', 'Total cash: %s', cash)
-        if cash >= 8 and self.provinceDelay > 0:
-            self.provinceDelay -= 1
+        if cash == 0: return
+        bestCards = []
+        for c in self.cardPrefs:
+            card = CARDS[c]
+            if card.cost > cash: continue
+            if self.table.count(c) == 0: continue
 
-        if cash >= 8 and self.provinceDelay == 0:
-            if self.buy('province'): return
-        elif cash >= 6:
-            toggle = self.toggle
-            self.toggle = 1 - self.toggle
-            if toggle == 1:
-                if self.buy('$3'): return
-                if self.buy('nobles'): return
-            else:
-                if self.buy('nobles'): return
-                if self.buy('$3'): return
-        elif cash >= 3:
-            if self.buy('$2'): return
+            if not bestCards:
+                bestCards = [c]
+            elif self.cardPrefs[c] > self.cardPrefs[bestCards[0]]:
+                bestCards = [c]
+            elif self.cardPrefs[c] == self.cardPrefs[bestCards[0]]:
+                # cards are equally preferred, choose the one we have fewer of
+                if self.deck.count(c) < self.deck.count(bestCards[0]):
+                    bestCards = [c]
+                elif self.deck.count(c) == self.deck.count(bestCards[0]):
+                    # cards are equally few, choose randomly
+                    bestCards.append(c)
+        if bestCards:
+            c = random.choice(bestCards)
+            log('buy', 'Buying %s', c)
+            self.table.buy(c, self.deck)
         else:
             log('buy', 'No buy')
 
@@ -313,11 +332,24 @@ class Player:
         print 'Hands with >$8', bigCashHands
         print results
 
-MAX_HANDS = 50
+MAX_HANDS = 100
 
 def playGame(firstPlayer=0):
     table = Table({'$2': 100, '$3': 100, 'nobles': 12, 'province': 12})
-    players = [Player(table, 3), Player(table, 0)]
+    players = [
+        Player(table, {
+            '$2': 1,
+            '$3': 2,
+            'nobles': 2,
+            'province': 3
+        }),
+        Player(table, {
+            '$2': 1,
+            '$3': 2,
+            'nobles': 2,
+            'province': 3
+        })
+    ]
 
     hands = 0
     while not table.isGameEnd() and hands < MAX_HANDS:
