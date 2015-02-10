@@ -260,6 +260,9 @@ class Player:
         self.deck = Deck({'$1': 5, 'estate': 3})
         self.toggle2 = self.toggle = random.randrange(2)
         self.cardPrefs = cardPrefs
+        self.delays = {}
+        for card in cardPrefs:
+            self.delays[card] = cardPrefs[card][1]
 
     def playHand(self, buy=True):
         hand = Hand(self.deck)
@@ -288,6 +291,9 @@ class Player:
             card = CARDS[c]
             if card.cost > cash: continue
             if self.table.count(c) == 0: continue
+            if self.delays[c] > 0:
+                self.delays[c] -= 1
+                continue
 
             if not bestCards or self.compareCards(c, bestCards[0]) > 0:
                 bestCards = [c]
@@ -312,7 +318,7 @@ class Player:
             return self.deck.count(card2) - self.deck.count(card1)
 
     def pref(self, card):
-        return self.cardPrefs[card] if card in self.cardPrefs else 0
+        return self.cardPrefs[card][0] if card in self.cardPrefs else 0
 
     def buy(self, card):
         if self.table.count(card) > 0:
@@ -346,16 +352,16 @@ def playGame(firstPlayer=0):
     table = Table({'$2': 100, '$3': 100, 'nobles': 12, 'province': 12})
     players = [
         Player(table, {
-            '$2': 1,
-            '$3': 2,
-            'nobles': 2,
-            'province': 3
+            '$2': (1,0),
+            '$3': (2,0),
+            'nobles': (2,0),
+            'province': (3,0)
         }),
         Player(table, {
-            '$2': 1,
-            '$3': 2,
-            'nobles': 2,
-            'province': 3
+            '$2': (1,0),
+            '$3': (2,0),
+            'nobles': (2,0),
+            'province': (3,3)
         })
     ]
 
