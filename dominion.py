@@ -282,29 +282,37 @@ class Player:
     def playBuys(self, hand):
         cash = hand.countCash()
         if cash == 0: return
+        log('buy', 'Cash: %s' % cash)
         bestCards = []
         for c in self.cardPrefs:
             card = CARDS[c]
             if card.cost > cash: continue
             if self.table.count(c) == 0: continue
 
-            if not bestCards:
+            if not bestCards or self.compareCards(c, bestCards[0]) > 0:
                 bestCards = [c]
-            elif self.cardPrefs[c] > self.cardPrefs[bestCards[0]]:
-                bestCards = [c]
-            elif self.cardPrefs[c] == self.cardPrefs[bestCards[0]]:
-                # cards are equally preferred, choose the one we have fewer of
-                if self.deck.count(c) < self.deck.count(bestCards[0]):
-                    bestCards = [c]
-                elif self.deck.count(c) == self.deck.count(bestCards[0]):
-                    # cards are equally few, choose randomly
-                    bestCards.append(c)
+            elif self.compareCards(bestCards[0], c) == 0:
+                # several cards are equally good, choose randomly
+                bestCards.append(c)
+
         if bestCards:
             c = random.choice(bestCards)
             log('buy', 'Buying %s', c)
             self.table.buy(c, self.deck)
         else:
             log('buy', 'No buy')
+
+    def compareCards(self, card1, card2):
+        pref1 = self.pref(card1)
+        pref2 = self.pref(card2)
+        if pref1 != pref2:
+            return pref1 - pref2
+        else:
+            # cards are equally preferred, choose the one we have fewer of (note sign reversal)
+            return self.deck.count(card2) - self.deck.count(card1)
+
+    def pref(self, card):
+        return self.cardPrefs[card] if card in self.cardPrefs else 0
 
     def buy(self, card):
         if self.table.count(card) > 0:
