@@ -25,19 +25,21 @@ class Card:
 #]))
 
 class GainActions:
-    def __init__(self, numActions):
-        self.numActions = numActions
+    def __init__(self, gain):
+        self.gain = gain
 
     def enumActions(self, hand):
-        hand.actions += self.numActions
+        hand.actions += self.gain
         return [hand]
 
 class GainCards:
-    def __init__(self, numCards):
-        self.numCards = numCards
+    def __init__(self, gain, replace=0):
+        self.gain = gain
+        self.replace = replace
 
     def enumActions(self, hand):
-        hand.deckActions += ['draw'] * self.numCards
+        hand.deckActions += ['draw'] * self.gain
+        hand.deckActions += ['replace'] * self.replace
         return [hand]
 
 class Choose:
@@ -52,6 +54,7 @@ class Choose:
         return hands
 
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
+COURTYARD_ACTION = GainCards(3, replace=1)
 
 CARDS = {
     '$1': Card(cost=0, cash=1),
@@ -59,7 +62,8 @@ CARDS = {
     '$3': Card(cost=6, cash=3),
     'estate': Card(cost=2, victory=1),
     'province': Card(cost=8, victory=6),
-    'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION)
+    'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION),
+    'courtyard': Card(cost=2, action=COURTYARD_ACTION)
 }
 
 class Deck:
@@ -93,6 +97,11 @@ class Deck:
                 hand.append(card)
         return hand
 
+    # 'undeal' the given card back onto the top of the deck
+    def replace(self, card):
+        self.deck.append(card)
+
+    # gain a new card, onto the discard pile
     def gain(self, card):
         if card in self.cards:
             self.cards[card] += 1
@@ -212,6 +221,8 @@ class Hand:
         # we have an action to use, and a card to play it with
         results = []
         for c in self.collated:
+            if self.collated[c] == 0:
+                continue
             card = CARDS[c]
             if card.action:
                 hand = self.clone()
@@ -223,26 +234,31 @@ class Hand:
                 for possibleHand in possibleHands:
                     # continue to play more actions if there are any
                     results += possibleHand.enumActions()
-        return results
 
         # there is always the option to do nothing
-        # results.append(self)
+        results.append(self)
+        return results
 
     def gainedCards(self):
-        return self.deckActions.count('draw');
+        return self.deckActions.count('draw') - self.deckActions.count('replace');
 
-    def performDeckActions(self, deck):
+    def performDeckActions(self, deck, cardToReplace):
         for action in self.deckActions:
             if action == 'draw':
                 self.draw(deck, 1)
+            elif action == 'replace':
+                card = cardToReplace(self)
+                self.hand.remove(card)
+                self.collateCards()
+                deck.replace(card)
         self.deckActions = []
 
 class HandTest(unittest.TestCase):
     def test_bestHand(self):
         deck = Deck({'$1': 3, 'nobles': 2})
         hand = Hand(deck)
-        actions = hand.enumActions()
-        best = bestHand(actions)
+        hands = hand.enumActions()
+        best = bestHand(hands)
 
         self.assertEqual(best.played, ['nobles'] * 2)
         self.assertEqual(best.actions, 1)
@@ -309,8 +325,30 @@ class Player:
             results = hand.enumActions()
             hand = bestHand(results)
             log('play', 'Played hand: %r' % hand)
-            hand.performDeckActions(self.deck)
+            hand.performDeckActions(self.deck, self.cardToReplace)
         return hand
+
+    def cardToReplace(self, hand):
+        # simple strategy - optimise the current turn
+        # if we have no remaining actions, put an action on the deck for next turn
+        if hand.actions == 0:
+            for c in hand.hand:
+                if CARDS[c].action:
+                    return c
+        # otherwise put a plain victory card back
+        for c in hand.hand:
+            card = CARDS[c]
+            if card.victory and not card.action and not card.cash:
+                return c
+        # otherwise put the lowest cash value card back
+        lowest = None
+        lowestCash = 1000
+        for c in hand.hand:
+            card = CARDS[c]
+            if card.cash < lowestCash:
+                lowest = c
+                lowestCash = card.cash
+        return lowest
 
     def playBuys(self, hand):
         cash = hand.countCash()
@@ -379,7 +417,7 @@ class Player:
 MAX_HANDS = 100
 
 def playGame(chromes, firstPlayer=0):
-    table = Table({'$2': 100, '$3': 100, 'nobles': 12, 'province': 12})
+    table = Table({'$2': 100, '$3': 100, 'nobles': 8, 'province': 8, 'courtyard': 10})
     players = []
     for chrome in chromes:
         players.append(Player(table, chrome))
@@ -501,7 +539,7 @@ logging.getLogger('game').setLevel(logging.WARNING)
 logging.getLogger('play').setLevel(logging.WARNING)
 
 if __name__ == '__main__':
-    #unittest.main()
+    # unittest.main()
 
     # random.seed(1)
     chromes = randomPopulation(10)
