@@ -2,6 +2,7 @@
 
 import random
 import logging
+import unittest
 
 def log(name, msg, *args):
     logging.getLogger(name).info(msg, *args)
@@ -34,7 +35,7 @@ class Nobles:
         h1.actions += 2
 
         h2 = hand.clone()
-        h2.gainedCards += 3
+        h2.deckActions += ['draw', 'draw', 'draw']
 
         return [h1, h2]
 
@@ -118,18 +119,18 @@ class Hand:
             self.hand = list(sourceHand.hand)
             self.played = list(sourceHand.played)
             self.actions = sourceHand.actions
-            self.gainedCards = sourceHand.gainedCards
+            self.deckActions = list(sourceHand.deckActions)
         else:
             assert deck != None
             self.hand = deck.deal(5)
             log('hand', 'Dealt hand: %s', self.hand)
             self.played = []
             self.actions = 1;
-            self.gainedCards = 0
+            self.deckActions = []
         self.collateCards()
 
     def __repr__(self):
-        return 'Hand(hand=%r,actions=%r,gainedCards=%r,played=%r)' % (self.hand, self.actions, self.gainedCards, self.played)
+        return 'Hand(hand=%r,actions=%r,deckActions=%r,played=%r)' % (self.hand, self.actions, self.deckActions, self.played)
 
     def clone(self):
         return Hand(sourceHand=self)
@@ -213,10 +214,25 @@ class Hand:
         # there is always the option to do nothing
         # results.append(self)
 
-    def drawGainedCards(self, deck):
-        if self.gainedCards:
-            self.draw(deck, self.gainedCards)
-        self.gainedCards = 0
+    def gainedCards(self):
+        return self.deckActions.count('draw');
+
+    def performDeckActions(self, deck):
+        for action in self.deckActions:
+            if action == 'draw':
+                self.draw(deck, 1)
+        self.deckActions = []
+
+class HandTest(unittest.TestCase):
+    def test_bestHand(self):
+        deck = Deck({'$1': 3, 'nobles': 2})
+        hand = Hand(deck)
+        actions = hand.enumActions()
+        best = bestHand(actions)
+
+        self.assertEqual(best.played, ['nobles'] * 2)
+        self.assertEqual(best.actions, 1)
+        self.assertEqual(best.gainedCards(), 3)
 
 class Table:
     def __init__(self, stacks):
@@ -248,9 +264,9 @@ def bestHand(hands):
     for hand in hands:
         if not best:
             best = hand
-        elif hand.gainedCards > best.gainedCards:
+        elif hand.gainedCards() > best.gainedCards():
             best = hand
-        elif hand.gainedCards == best.gainedCards and hand.actions > best.actions:
+        elif hand.gainedCards() == best.gainedCards() and hand.actions > best.actions:
             best = hand
     return best
 
@@ -279,7 +295,7 @@ class Player:
             results = hand.enumActions()
             hand = bestHand(results)
             log('play', 'Played hand: %r' % hand)
-            hand.drawGainedCards(self.deck)
+            hand.performDeckActions(self.deck)
         return hand
 
     def playBuys(self, hand):
@@ -391,7 +407,7 @@ def randomPopulation(size=20):
             if c == '$1':
                 chrome[c] = (0,0)
             else:
-                chrome[c] = (random.randint(0, 10),0)
+                chrome[c] = (random.randint(0, 5),0)
         chromes.append(chrome)
     return chromes
 
@@ -471,6 +487,8 @@ logging.getLogger('game').setLevel(logging.WARNING)
 logging.getLogger('play').setLevel(logging.WARNING)
 
 if __name__ == '__main__':
+    #unittest.main()
+
     #random.seed(1)
     chromes = randomPopulation(10)
 
@@ -479,9 +497,9 @@ if __name__ == '__main__':
         f = fittest(chromes, wins)
         print 'Fittest: %s' % f
         chromes = nextGeneration(chromes, wins)
-        # keep the fittest without breeding
+        mutateGeneration(chromes, 0.2)
+        # keep the fittest without breeding or mutation
         chromes[0] = f
-        mutateGeneration(chromes, 0.1)
 
     print 'Fittest vs. simple human strategy:'
     bestOf([
