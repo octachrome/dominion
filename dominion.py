@@ -24,20 +24,34 @@ class Card:
 #    Optional(TrashThis())
 #]))
 
-#nobles = Card('nobles', action=Choose(2, [
-#    GainCards(3),
-#    GainActions(2)
-#]))
+class GainActions:
+    def __init__(self, numActions):
+        self.numActions = numActions
 
-class Nobles:
     def enumActions(self, hand):
-        h1 = hand.clone()
-        h1.actions += 2
+        hand.actions += self.numActions
+        return [hand]
 
-        h2 = hand.clone()
-        h2.deckActions += ['draw', 'draw', 'draw']
+class GainCards:
+    def __init__(self, numCards):
+        self.numCards = numCards
 
-        return [h1, h2]
+    def enumActions(self, hand):
+        hand.deckActions += ['draw'] * self.numCards
+        return [hand]
+
+class Choose:
+    def __init__(self, choices):
+        self.choices = choices
+
+    def enumActions(self, hand):
+        hands = []
+        for choice in self.choices:
+            h = hand.clone()
+            hands += choice.enumActions(h)
+        return hands
+
+NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 
 CARDS = {
     '$1': Card(cost=0, cash=1),
@@ -45,7 +59,7 @@ CARDS = {
     '$3': Card(cost=6, cash=3),
     'estate': Card(cost=2, victory=1),
     'province': Card(cost=8, victory=6),
-    'nobles': Card(cost=6, victory=2, action=Nobles())
+    'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION)
 }
 
 class Deck:
@@ -489,7 +503,7 @@ logging.getLogger('play').setLevel(logging.WARNING)
 if __name__ == '__main__':
     #unittest.main()
 
-    #random.seed(1)
+    # random.seed(1)
     chromes = randomPopulation(10)
 
     for i in range(20):
@@ -511,3 +525,4 @@ if __name__ == '__main__':
             'province': (3,3)
         }
     ])
+ 
