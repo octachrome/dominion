@@ -348,22 +348,11 @@ class Player:
 
 MAX_HANDS = 100
 
-def playGame(firstPlayer=0):
+def playGame(chromes, firstPlayer=0):
     table = Table({'$2': 100, '$3': 100, 'nobles': 12, 'province': 12})
-    players = [
-        Player(table, {
-            '$2': (1,0),
-            '$3': (2,0),
-            'nobles': (2,0),
-            'province': (3,0)
-        }),
-        Player(table, {
-            '$2': (1,0),
-            '$3': (2,0),
-            'nobles': (2,0),
-            'province': (3,3)
-        })
-    ]
+    players = []
+    for chrome in chromes:
+        players.append(Player(table, chrome))
 
     hands = 0
     while not table.isGameEnd() and hands < MAX_HANDS:
@@ -373,27 +362,105 @@ def playGame(firstPlayer=0):
 
     if not table.isGameEnd():
         log('game', 'Game timed out after %s hands', hands)
-        return -1
-    else:
-        score0 = players[0].deck.countVictory()
-        score1 = players[1].deck.countVictory()
-        if score0 == score1:
-            log('game', 'Draw after %s hands', hands)
-            return -1
-        elif score0 > score1:
-            log('game', 'Player 0 won after %s hands', hands)
-            return 0
-        else:
-            log('game', 'Player 1 won after %s hands', hands)
-            return 1
 
-def bestOf(games=500):
+    score0 = players[0].deck.countVictory()
+    score1 = players[1].deck.countVictory()
+    if score0 == score1:
+        log('game', 'Draw after %s hands', hands)
+        return -1
+    elif score0 > score1:
+        log('game', 'Player 0 won after %s hands', hands)
+        return 0
+    else:
+        log('game', 'Player 1 won after %s hands', hands)
+        return 1
+
+def bestOf(chromes, games=500):
     wins = [0, 0]
     for i in range(games):
-        result = playGame(i % 2)
+        result = playGame(chromes, i % 2)
         if result >= 0:
             wins[result] += 1
     print wins
+
+def randomPopulation(size=20):
+    chromes = []
+    for i in range(size):
+        chrome = {}
+        for c in CARDS:
+            if c == '$1':
+                chrome[c] = (0,0)
+            else:
+                chrome[c] = (random.randint(0, 10),0)
+        chromes.append(chrome)
+    return chromes
+
+def fightAll(chromes):
+    wins = [0] * len(chromes)
+    # best of 5, both ways
+    for i in range(5):
+        for p1 in range(len(chromes)):
+            for p2 in range(len(chromes)):
+                if p1 == p2:
+                    continue
+                c1 = chromes[p1]
+                c2 = chromes[p2]
+                result = playGame([c1, c2])
+                if result == 0:
+                    wins[p1] += 1
+                elif result == 1:
+                    wins[p2] += 1
+    return wins
+
+def breed(parent1, parent2):
+    child = {}
+    for card in CARDS:
+        child[card] = random.choice([parent1[card], parent2[card]])
+    return child
+
+def nextGeneration(chromes, wins):
+    sampleSpace = []
+    nextGen = []
+    for i in range(len(chromes)):
+        chrome = chromes[i]
+        sampleSpace += [chrome] * wins[i]
+    for i in range(len(chromes)):
+        c1 = c2 = random.choice(sampleSpace)
+        while c1 is c2:
+            c2 = random.choice(sampleSpace)
+        child = breed(c1, c2)
+        nextGen.append(child)
+    return nextGen
+
+def mutateGeneration(chromes, rate):
+    n = int(rate * len(chromes) * len(CARDS))
+    for i in range(n):
+        # index of chromasome to mutate
+        c = random.randrange(len(chromes))
+        # which card to mutate
+        card = random.choice(CARDS.keys())
+        pref = chromes[c][card]
+        # which attribute to mutate (preference or delay)
+        attr = random.randrange(2)
+        # how much to mutate by
+        delta = random.choice([-1, 1])
+        newAttr = pref[attr] + delta
+        if delta < 0: continue
+        if attr == 0:
+            newPref = (newAttr, pref[1])
+        else:
+            newPref = (pref[0], newAttr)
+
+        chromes[c][card] = newPref
+
+def fittest(chromes, wins):
+    bestScore = wins[0]
+    fittest = chromes[0]
+    for i in range(len(chromes)):
+        if wins[i] > bestScore:
+            bestScore = wins[i]
+            fittest = chromes[i]
+    return fittest
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
 logging.getLogger('hand').setLevel(logging.WARNING)
@@ -404,4 +471,25 @@ logging.getLogger('game').setLevel(logging.WARNING)
 logging.getLogger('play').setLevel(logging.WARNING)
 
 if __name__ == '__main__':
-    bestOf()
+    #random.seed(1)
+    chromes = randomPopulation(10)
+
+    for i in range(20):
+        wins = fightAll(chromes)
+        f = fittest(chromes, wins)
+        print 'Fittest: %s' % f
+        chromes = nextGeneration(chromes, wins)
+        # keep the fittest without breeding
+        chromes[0] = f
+        mutateGeneration(chromes, 0.1)
+
+    print 'Fittest vs. simple human strategy:'
+    bestOf([
+        chromes[0],
+        {
+            '$2': (1,0),
+            '$3': (2,0),
+            'nobles': (2,0),
+            'province': (3,3)
+        }
+    ])
