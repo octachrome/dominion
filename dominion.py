@@ -3,6 +3,7 @@
 import random
 import logging
 import unittest
+import cmd
 
 def log(name, msg, *args):
     logging.getLogger(name).info(msg, *args)
@@ -57,9 +58,9 @@ NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 COURTYARD_ACTION = GainCards(3, replace=1)
 
 CARDS = {
-    '$1': Card(cost=0, cash=1),
-    '$2': Card(cost=3, cash=2),
-    '$3': Card(cost=6, cash=3),
+    'copper': Card(cost=0, cash=1),
+    'silver': Card(cost=3, cash=2),
+    'gold': Card(cost=6, cash=3),
     'estate': Card(cost=2, victory=1),
     'province': Card(cost=8, victory=6),
     'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION),
@@ -67,7 +68,7 @@ CARDS = {
 }
 
 class Deck:
-    def __init__(self, cards):
+    def __init__(self, cards={'copper': 5, 'estate': 2}):
         deck = []
         for card in cards:
             quantity = cards[card]
@@ -255,7 +256,7 @@ class Hand:
 
 class HandTest(unittest.TestCase):
     def test_bestHand(self):
-        deck = Deck({'$1': 3, 'nobles': 2})
+        deck = Deck({'copper': 3, 'nobles': 2})
         hand = Hand(deck)
         hands = hand.enumActions()
         best = bestHand(hands)
@@ -303,8 +304,7 @@ def bestHand(hands):
 class Player:
     def __init__(self, table, cardPrefs):
         self.table = table
-        self.deck = Deck({'$1': 5, 'estate': 3})
-        self.toggle2 = self.toggle = random.randrange(2)
+        self.deck = Deck()
         self.cardPrefs = cardPrefs
         self.delays = {}
         for card in cardPrefs:
@@ -414,10 +414,43 @@ class Player:
         print 'Hands with >$8', bigCashHands
         print results
 
+class HumanPlayer(Player):
+    def __init__(self, table):
+        self.table = table
+        self.deck = Deck()
+        self.hand = None
+
+    def startHand(self):
+        self.hand = Hand(self.deck)
+
+    def buy(self, cardName):
+        if not cardName in CARDS:
+            print 'No such card'
+            return False
+
+        card = CARDS[cardName]
+        cash = self.hand.countCash()
+        if cash < card.cost:
+            print 'Too expensive'
+            return False
+
+        if self.table.count(cardName) == 0:
+            print 'None left'
+            return False
+
+        print 'Buying', cardName
+        self.table.buy(cardName, self.deck)
+        return True
+
+    def finishHand(self):
+        if self.hand:
+            self.hand.finish(self.deck)
+            self.hand = None
+
 MAX_HANDS = 100
 
 def playGame(chromes, firstPlayer=0):
-    table = Table({'$2': 100, '$3': 100, 'nobles': 8, 'province': 8, 'courtyard': 10})
+    table = Table({'silver': 100, 'gold': 100, 'nobles': 8, 'province': 8, 'courtyard': 10})
     players = []
     for chrome in chromes:
         players.append(Player(table, chrome))
@@ -456,7 +489,7 @@ def randomPopulation(size=20):
     for i in range(size):
         chrome = {}
         for c in CARDS:
-            if c == '$1':
+            if c == 'copper':
                 chrome[c] = (0,0)
             else:
                 chrome[c] = (random.randint(0, 5),0)
@@ -531,14 +564,76 @@ def fittest(chromes, wins):
     return fittest
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
-logging.getLogger('hand').setLevel(logging.WARNING)
-logging.getLogger('action').setLevel(logging.WARNING)
-logging.getLogger('cash').setLevel(logging.WARNING)
-logging.getLogger('buy').setLevel(logging.WARNING)
-logging.getLogger('game').setLevel(logging.WARNING)
-logging.getLogger('play').setLevel(logging.WARNING)
+#logging.getLogger('hand').setLevel(logging.WARNING)
+#logging.getLogger('action').setLevel(logging.WARNING)
+#logging.getLogger('cash').setLevel(logging.WARNING)
+#logging.getLogger('buy').setLevel(logging.WARNING)
+#logging.getLogger('game').setLevel(logging.WARNING)
+#logging.getLogger('play').setLevel(logging.WARNING)
+
+class GameCmd(cmd.Cmd):
+    def start(self, chrome):
+        self.table = Table({'silver': 100, 'gold': 100, 'nobles': 8, 'province': 8, 'courtyard': 10})
+        self.human = HumanPlayer(self.table)
+        self.computer = Player(self.table, chrome)
+
+        if not self.nextTurn():
+            self.cmdloop()
+
+    def nextTurn(self):
+        self.human.finishHand()
+        if self.checkGameEnd():
+            return True
+
+        print '\nComputer:'
+        self.computer.playHand();
+        if self.checkGameEnd():
+            return True
+
+        print '\nYou:'
+        self.human.startHand();
+
+    def checkGameEnd(self):
+        if self.table.isGameEnd():
+            hscore = self.human.deck.countVictory()
+            cscore = self.computer.deck.countVictory()
+            print "Score: you %s, computer %s" % (hscore, cscore)
+            if score0 == score1:
+                print 'Draw'
+            elif score0 > score1:
+                print 'You win'
+            else:
+                print 'Computer wins'
+            return True
+        return False
+
+    def do_exit(self, arg):
+        return True
+
+    def do_quit(self, arg):
+        return True
+
+    def do_done(self, arg):
+        return self.nextTurn()
+
+    def do_play(self, arg):
+        return False
+
+    def do_buy(self, arg):
+        if self.human.buy(arg):
+            return self.nextTurn()
+
+        return False
 
 if __name__ == '__main__':
+    GameCmd().start({
+        'silver': (1,0),
+        'gold': (2,0),
+        'nobles': (2,0),
+        'province': (3,3)
+    })
+
+else:
     # unittest.main()
 
     # random.seed(1)
@@ -557,8 +652,8 @@ if __name__ == '__main__':
     bestOf([
         chromes[0],
         {
-            '$2': (1,0),
-            '$3': (2,0),
+            'silver': (1,0),
+            'gold': (2,0),
             'nobles': (2,0),
             'province': (3,3)
         }
