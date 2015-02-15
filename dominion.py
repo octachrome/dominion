@@ -25,25 +25,61 @@ class Card:
 #    Optional(TrashThis())
 #]))
 
-class GainActions:
+class Action:
+    def describe(self):
+        raise Error('All actions must implement describe')
+
+    def apply(self, hand):
+        raise Error('All actions must implement apply')
+
+    def playHuman(self, hand):
+        self.apply(hand)
+        return True
+
+    def enumActions(self, hand):
+        self.apply(hand)
+        return [hand]
+
+class GainActions(Action):
     def __init__(self, gain):
         self.gain = gain
 
-    def enumActions(self, hand):
+    def apply(self, hand):
         hand.actions += self.gain
         return [hand]
 
-class GainCards:
+    def describe(self):
+        return '+%s action(s)' % self.gain
+
+class GainCards(Action):
     def __init__(self, gain, replace=0):
         self.gain = gain
         self.replace = replace
 
-    def enumActions(self, hand):
+    def apply(self, hand):
         hand.deckActions += ['draw'] * self.gain
         hand.deckActions += ['replace'] * self.replace
         return [hand]
 
-class Choose:
+    def describe(self):
+        desc = '+%s cards(s)' % self.gain
+        if self.replace:
+            desc += ', replace %s' % self.replace
+        return desc
+
+def choose(choices):
+    c = 1
+    for choice in choices:
+        print '%s) %s' % (c, choice)
+        c += 1
+    inp = raw_input('> ')
+    if len(inp) == 1:
+        choice = ord(inp) - ord('1')
+        if choice >= 0 and choice < len(choices):
+            return choice
+    return -1
+
+class Choose(Action):
     def __init__(self, choices):
         self.choices = choices
 
@@ -53,6 +89,22 @@ class Choose:
             h = hand.clone()
             hands += choice.enumActions(h)
         return hands
+
+    def describe(self):
+        desc = 'Choose 1:'
+        for choice in self.choices:
+            desc += '\n  ' + choice.describe()
+        return desc
+
+    def playHuman(self, hand):
+        print 'Choose 1:'
+        choice = choose([c.describe() for c in self.choices])
+        if choice < 0:
+            print 'Invalid choice'
+            return False
+        action = self.choices[choice]
+        action.playHuman(hand)
+        return True
 
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 COURTYARD_ACTION = GainCards(3, replace=1)
@@ -68,7 +120,7 @@ CARDS = {
 }
 
 class Deck:
-    def __init__(self, cards={'copper': 5, 'estate': 2}):
+    def __init__(self, cards={'copper': 5, 'estate': 3}):
         deck = []
         for card in cards:
             quantity = cards[card]
@@ -143,6 +195,7 @@ class Hand:
             self.hand = list(sourceHand.hand)
             self.played = list(sourceHand.played)
             self.actions = sourceHand.actions
+            self.buys = sourceHand.buys
             self.deckActions = list(sourceHand.deckActions)
         else:
             assert deck != None
@@ -150,11 +203,12 @@ class Hand:
             log('hand', 'Dealt hand: %s', self.hand)
             self.played = []
             self.actions = 1;
+            self.buys = 1;
             self.deckActions = []
         self.collateCards()
 
     def __repr__(self):
-        return 'Hand(hand=%r,actions=%r,deckActions=%r,played=%r)' % (self.hand, self.actions, self.deckActions, self.played)
+        return 'Hand(hand=%r,actions=%r,buys=%r,deckActions=%r,played=%r)' % (self.hand, self.actions, self.buys, self.deckActions, self.played)
 
     def clone(self):
         return Hand(sourceHand=self)
@@ -215,6 +269,9 @@ class Hand:
     def finish(self, deck):
         self.discardPlayed(deck)
         self.discardHand(deck)
+
+    def choices(self):
+        return [card for card in self.collated if self.collated[card] > 0]
 
     def enumActions(self):
         if self.actions == 0 or self.countActions() == 0:
@@ -373,6 +430,7 @@ class Player:
             c = random.choice(bestCards)
             log('buy', 'Buying %s', c)
             self.table.buy(c, self.deck)
+            hand.buys -= 1
         else:
             log('buy', 'No buy')
 
@@ -387,15 +445,6 @@ class Player:
 
     def pref(self, card):
         return self.cardPrefs[card][0] if card in self.cardPrefs else 0
-
-    def buy(self, card):
-        if self.table.count(card) > 0:
-            log('buy', 'Buying %s', card)
-            self.table.buy(card, self.deck)
-            return True
-        else:
-            log('buy', 'No more left: %s', card)
-            return False
 
     def averageSpendTest(self, hands=20):
         results = {}
@@ -440,7 +489,33 @@ class HumanPlayer(Player):
 
         print 'Buying', cardName
         self.table.buy(cardName, self.deck)
+        self.hand.buys -= 1
         return True
+
+    def play(self, cardName):
+        if not cardName in CARDS:
+            print 'Unknown card'
+        else:
+            card = CARDS[cardName]
+            if card.action:
+                hand = self.hand.clone()
+                hand.play(cardName)
+                hand.actions -= 1
+                if card.action.playHuman(hand):
+                    hand.performDeckActions(self.deck, self.cardToReplace)
+                    self.hand = hand
+                else:
+                    print 'Action not played'
+            else:
+                print 'No action'
+
+    def cardToReplace(self, hand):
+        cards = hand.choices()
+        while True:
+            print 'Choose a card to replace on the deck:'
+            choice = choose(cards)
+            if choice >= 0:
+                return cards[choice]
 
     def finishHand(self):
         if self.hand:
@@ -598,14 +673,23 @@ class GameCmd(cmd.Cmd):
             hscore = self.human.deck.countVictory()
             cscore = self.computer.deck.countVictory()
             print "Score: you %s, computer %s" % (hscore, cscore)
-            if score0 == score1:
+            if hscore == cscore:
                 print 'Draw'
-            elif score0 > score1:
+            elif hscore > cscore:
                 print 'You win'
             else:
                 print 'Computer wins'
             return True
         return False
+
+    def checkTurnEnd(self):
+        if self.human.hand.buys == 0:
+            print 'Turn ended'
+            return self.nextTurn()
+        else:
+            print 'Hand:', self.human.hand.hand
+            print '%s action(s) and %s buy(s) remaining' % (self.human.hand.actions, self.human.hand.buys)
+            return False
 
     def do_exit(self, arg):
         return True
@@ -616,14 +700,27 @@ class GameCmd(cmd.Cmd):
     def do_done(self, arg):
         return self.nextTurn()
 
-    def do_play(self, arg):
-        return False
+    def do_play(self, cardName):
+        self.human.play(cardName)
+        return self.checkTurnEnd()
 
-    def do_buy(self, arg):
-        if self.human.buy(arg):
-            return self.nextTurn()
+    def do_buy(self, card):
+        self.human.buy(card)
+        return self.checkTurnEnd()
 
-        return False
+    def do_describe(self, cardName):
+        if not cardName in CARDS:
+            print 'Unknown card'
+        else:
+            card = CARDS[cardName]
+            if card.cost:
+                print 'Cost: $%s' % card.cost
+            if card.victory:
+                print 'Victory points: %s' % card.victory
+            if card.cash:
+                print 'Cash value: $%s' % card.cash
+            if card.action:
+                print card.action.describe()
 
 if __name__ == '__main__':
     GameCmd().start({
@@ -658,4 +755,3 @@ else:
             'province': (3,3)
         }
     ])
- 
