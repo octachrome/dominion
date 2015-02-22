@@ -4,6 +4,7 @@ import random
 import logging
 import unittest
 import cmd
+import itertools
 
 def log(name, msg, *args):
     logging.getLogger(name).info(msg, *args)
@@ -102,26 +103,32 @@ def choose(choices):
     return -1
 
 class Choose(Action):
-    def __init__(self, choices, n=1):
+    def __init__(self, choices, k=1):
         self.choices = choices
-        self.n = n
+        self.k = k
 
     def enumActions(self, hand):
-        hands = []
-        for choice in self.choices:
-            h = hand.clone()
-            hands += choice.enumActions(h)
-        return hands
+        allHands = []
+        tuples = itertools.combinations(self.choices, self.k)
+        for tup in tuples:
+            hands = [hand.clone()]
+            for choice in tup:
+                nextHands = []
+                for h in hands:
+                    nextHands += choice.enumActions(h)
+                hands = nextHands
+            allHands += hands
+        return allHands
 
     def describe(self):
-        desc = 'Choose %s:' % self.n
+        desc = 'Choose %s:' % self.k
         for choice in self.choices:
             desc += '\n  ' + choice.describe()
         return desc
 
     def playHuman(self, hand):
-        print 'Choose %s:' % self.n
-        for i in range(self.n):
+        print 'Choose %s:' % self.k
+        for i in range(self.k):
             print 'Choice %s:' % (i + 1)
             choice = choose([c.describe() for c in self.choices])
             if choice < 0:
@@ -131,9 +138,16 @@ class Choose(Action):
             action.playHuman(hand)
         return True
 
+class ChooseTest(unittest.TestCase):
+    def test_choose2(self):
+        action = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
+        start = Hand(Deck())
+        hands = action.enumActions(start)
+        print hands
+
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 COURTYARD_ACTION = GainCards(3, replace=1)
-PAWN_ACTION = Choose(n=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
+PAWN_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
 
 CARDS = {
     'copper': Card(cost=0, cash=1),
@@ -237,7 +251,7 @@ class Hand:
         self.collateCards()
 
     def __repr__(self):
-        return 'Hand(hand=%r,actions=%r,buys=%r,deckActions=%r,played=%r)' % (self.hand, self.actions, self.buys, self.deckActions, self.played)
+        return 'Hand(hand=%r,actions=%r,buys=%r,deckActions=%r,played=%r,cashOffset=%r)' % (self.hand, self.actions, self.buys, self.deckActions, self.played, self.cashOffset)
 
     def clone(self):
         return Hand(sourceHand=self)
@@ -753,6 +767,8 @@ class GameCmd(cmd.Cmd):
                 print card.action.describe()
 
 if __name__ == '__main__':
+    #unittest.main()
+
     GameCmd().start({
         'silver': (1,0),
         'gold': (2,0),
@@ -761,8 +777,6 @@ if __name__ == '__main__':
     })
 
 else:
-    # unittest.main()
-
     # random.seed(1)
     chromes = randomPopulation(10)
 
