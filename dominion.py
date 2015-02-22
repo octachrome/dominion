@@ -67,6 +67,28 @@ class GainCards(Action):
             desc += ', replace %s' % self.replace
         return desc
 
+class GainBuys(Action):
+    def __init__(self, gain):
+        self.gain = gain
+
+    def apply(self, hand):
+        hand.buys += self.gain
+        return [hand]
+
+    def describe(self):
+        return '+%s buy(s)' % self.gain
+
+class GainCash(Action):
+    def __init__(self, gain):
+        self.gain = gain
+
+    def apply(self, hand):
+        hand.cashOffset += self.gain
+        return [hand]
+
+    def describe(self):
+        return '+$%s' % self.gain
+
 def choose(choices):
     c = 1
     for choice in choices:
@@ -80,8 +102,9 @@ def choose(choices):
     return -1
 
 class Choose(Action):
-    def __init__(self, choices):
+    def __init__(self, choices, n=1):
         self.choices = choices
+        self.n = n
 
     def enumActions(self, hand):
         hands = []
@@ -91,23 +114,26 @@ class Choose(Action):
         return hands
 
     def describe(self):
-        desc = 'Choose 1:'
+        desc = 'Choose %s:' % self.n
         for choice in self.choices:
             desc += '\n  ' + choice.describe()
         return desc
 
     def playHuman(self, hand):
-        print 'Choose 1:'
-        choice = choose([c.describe() for c in self.choices])
-        if choice < 0:
-            print 'Invalid choice'
-            return False
-        action = self.choices[choice]
-        action.playHuman(hand)
+        print 'Choose %s:' % self.n
+        for i in range(self.n):
+            print 'Choice %s:' % (i + 1)
+            choice = choose([c.describe() for c in self.choices])
+            if choice < 0:
+                print 'Invalid choice'
+                return False
+            action = self.choices[choice]
+            action.playHuman(hand)
         return True
 
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 COURTYARD_ACTION = GainCards(3, replace=1)
+PAWN_ACTION = Choose(n=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
 
 CARDS = {
     'copper': Card(cost=0, cash=1),
@@ -116,11 +142,12 @@ CARDS = {
     'estate': Card(cost=2, victory=1),
     'province': Card(cost=8, victory=6),
     'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION),
-    'courtyard': Card(cost=2, action=COURTYARD_ACTION)
+    'courtyard': Card(cost=2, action=COURTYARD_ACTION),
+    'pawn': Card(cost=2, action=PAWN_ACTION)
 }
 
 class Deck:
-    def __init__(self, cards={'copper': 5, 'estate': 3}):
+    def __init__(self, cards={'copper': 7, 'estate': 3}):
         deck = []
         for card in cards:
             quantity = cards[card]
@@ -196,6 +223,7 @@ class Hand:
             self.played = list(sourceHand.played)
             self.actions = sourceHand.actions
             self.buys = sourceHand.buys
+            self.cashOffset = sourceHand.cashOffset
             self.deckActions = list(sourceHand.deckActions)
         else:
             assert deck != None
@@ -204,6 +232,7 @@ class Hand:
             self.played = []
             self.actions = 1;
             self.buys = 1;
+            self.cashOffset = 0;
             self.deckActions = []
         self.collateCards()
 
@@ -222,7 +251,7 @@ class Hand:
                 self.collated[card] = 1
 
     def countCash(self):
-        cash = 0
+        cash = self.cashOffset
         for card in self.collated:
             cash += self.collated[card] * CARDS[card].cash
         return cash
@@ -490,6 +519,7 @@ class HumanPlayer(Player):
         print 'Buying', cardName
         self.table.buy(cardName, self.deck)
         self.hand.buys -= 1
+        self.hand.cashOffset -= card.cost
         return True
 
     def play(self, cardName):
@@ -648,7 +678,7 @@ logging.basicConfig(format="%(message)s", level=logging.INFO)
 
 class GameCmd(cmd.Cmd):
     def start(self, chrome):
-        self.table = Table({'silver': 100, 'gold': 100, 'nobles': 8, 'province': 8, 'courtyard': 10})
+        self.table = Table({'silver': 100, 'gold': 100, 'nobles': 8, 'province': 8, 'courtyard': 10, 'pawn': 10})
         self.human = HumanPlayer(self.table)
         self.computer = Player(self.table, chrome)
 
@@ -687,7 +717,7 @@ class GameCmd(cmd.Cmd):
             print 'Turn ended'
             return self.nextTurn()
         else:
-            print 'Hand:', self.human.hand.hand
+            print 'Hand: %s ($%s total)' % (self.human.hand.hand, self.human.hand.countCash())
             print '%s action(s) and %s buy(s) remaining' % (self.human.hand.actions, self.human.hand.buys)
             return False
 
