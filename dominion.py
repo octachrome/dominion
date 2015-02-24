@@ -143,7 +143,44 @@ class ChooseTest(unittest.TestCase):
         action = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
         start = Hand(Deck())
         hands = action.enumActions(start)
-        print hands
+
+        self.assertEquals(len(hands), 6)
+
+        # +1 card, +1 action
+        self.assertEquals(hands[0].deckActions, ['draw'])
+        self.assertEquals(hands[0].actions, 2)
+        self.assertEquals(hands[0].buys, 1)
+        self.assertEquals(hands[0].cashOffset, 0)
+
+        # +1 card, +1 buy
+        self.assertEquals(hands[1].deckActions, ['draw'])
+        self.assertEquals(hands[1].actions, 1)
+        self.assertEquals(hands[1].buys, 2)
+        self.assertEquals(hands[1].cashOffset, 0)
+
+        # +1 card, +$1
+        self.assertEquals(hands[2].deckActions, ['draw'])
+        self.assertEquals(hands[2].actions, 1)
+        self.assertEquals(hands[2].buys, 1)
+        self.assertEquals(hands[2].cashOffset, 1)
+
+        # +1 action, +1 buy
+        self.assertEquals(hands[3].deckActions, [])
+        self.assertEquals(hands[3].actions, 2)
+        self.assertEquals(hands[3].buys, 2)
+        self.assertEquals(hands[3].cashOffset, 0)
+
+        # +1 action, +$1
+        self.assertEquals(hands[4].deckActions, [])
+        self.assertEquals(hands[4].actions, 2)
+        self.assertEquals(hands[4].buys, 1)
+        self.assertEquals(hands[4].cashOffset, 1)
+
+        # +1 buy, +$1
+        self.assertEquals(hands[5].deckActions, [])
+        self.assertEquals(hands[5].actions, 1)
+        self.assertEquals(hands[5].buys, 2)
+        self.assertEquals(hands[5].cashOffset, 1)
 
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 COURTYARD_ACTION = GainCards(3, replace=1)
@@ -228,6 +265,28 @@ class Deck:
         for card in self.cards:
             victory += CARDS[card].victory * self.cards[card]
         return victory
+
+    def expectedCash(self):
+        count = 0
+        cash = 0.0
+        for c in self.cards:
+            count += self.cards[c]
+            cash += CARDS[c].cash * self.cards[c]
+        if count == 0:
+            return 0
+        else:
+            return cash / count
+
+class DeckTest(unittest.TestCase):
+    def test_expectedCash(self):
+        deck = Deck({'copper': 3})
+        self.assertEqual(deck.expectedCash(), 1)
+
+        deck = Deck({'copper': 2, 'gold': 2})
+        self.assertEqual(deck.expectedCash(), 2)
+
+        deck = Deck({'copper': 2, 'gold': 2, 'estate': 4})
+        self.assertEqual(deck.expectedCash(), 1)
 
 class Hand:
     def __init__(self, deck=None, sourceHand=None):
@@ -343,6 +402,10 @@ class Hand:
     def gainedCards(self):
         return self.deckActions.count('draw') - self.deckActions.count('replace');
 
+    def expectedCash(self, deck):
+        # could be smarter by replacing victory-only cards and counting cash value of all drawn cards
+        return self.countCash() + self.gainedCards() * deck.expectedCash()
+
     def performDeckActions(self, deck, cardToReplace):
         for action in self.deckActions:
             if action == 'draw':
@@ -359,8 +422,7 @@ class HandTest(unittest.TestCase):
         deck = Deck({'copper': 3, 'nobles': 2})
         hand = Hand(deck)
         hands = hand.enumActions()
-        best = bestHand(hands)
-
+        best = bestHand(hands, deck)
         self.assertEqual(best.played, ['nobles'] * 2)
         self.assertEqual(best.actions, 1)
         self.assertEqual(best.gainedCards(), 3)
@@ -390,14 +452,14 @@ class Table:
         self.stacks[card] -= 1
         deck.gain(card)
 
-def bestHand(hands):
+def bestHand(hands, deck):
     best = None
     for hand in hands:
         if not best:
             best = hand
-        elif hand.gainedCards() > best.gainedCards():
+        elif hand.expectedCash(deck) > best.expectedCash(deck):
             best = hand
-        elif hand.gainedCards() == best.gainedCards() and hand.actions > best.actions:
+        elif hand.expectedCash(deck) == best.expectedCash(deck) and hand.actions > best.actions:
             best = hand
     return best
 
@@ -423,7 +485,7 @@ class Player:
         # this is too eager - it plays several actions without determining the outcome (cards drawn) after the first
         while hand.actions > 0 and hand.countActions() > 0:
             results = hand.enumActions()
-            hand = bestHand(results)
+            hand = bestHand(results, self.deck)
             log('play', 'Played hand: %r' % hand)
             hand.performDeckActions(self.deck, self.cardToReplace)
         return hand
@@ -682,14 +744,6 @@ def fittest(chromes, wins):
             fittest = chromes[i]
     return fittest
 
-logging.basicConfig(format="%(message)s", level=logging.INFO)
-#logging.getLogger('hand').setLevel(logging.WARNING)
-#logging.getLogger('action').setLevel(logging.WARNING)
-#logging.getLogger('cash').setLevel(logging.WARNING)
-#logging.getLogger('buy').setLevel(logging.WARNING)
-#logging.getLogger('game').setLevel(logging.WARNING)
-#logging.getLogger('play').setLevel(logging.WARNING)
-
 class GameCmd(cmd.Cmd):
     def start(self, chrome):
         self.table = Table({'silver': 100, 'gold': 100, 'nobles': 8, 'province': 8, 'courtyard': 10, 'pawn': 10})
@@ -766,18 +820,32 @@ class GameCmd(cmd.Cmd):
             if card.action:
                 print card.action.describe()
 
+logging.basicConfig(format="%(message)s", level=logging.INFO)
+
 if __name__ == '__main__':
-    #unittest.main()
+    # unittest.main()
 
     GameCmd().start({
-        'silver': (1,0),
-        'gold': (2,0),
-        'nobles': (2,0),
-        'province': (3,3)
+        'province': (5, 0),
+        'copper': (0, 1),
+        'gold': (2, 0),
+        'pawn': (2, 0),
+        'courtyard': (1, 1),
+        'estate': (2, 0),
+        'nobles': (4, 1),
+        'silver': (2, 0)
     })
 
 else:
     # random.seed(1)
+
+    logging.getLogger('hand').setLevel(logging.WARNING)
+    logging.getLogger('action').setLevel(logging.WARNING)
+    logging.getLogger('cash').setLevel(logging.WARNING)
+    logging.getLogger('buy').setLevel(logging.WARNING)
+    logging.getLogger('game').setLevel(logging.WARNING)
+    logging.getLogger('play').setLevel(logging.WARNING)
+
     chromes = randomPopulation(10)
 
     for i in range(20):
