@@ -90,6 +90,76 @@ class GainCash(Action):
     def describe(self):
         return '+$%s' % self.gain
 
+class DiscardForCash(Action):
+    def enumActions(self, hand):
+        # No point discarding cards already worth a dollar
+        discardChoices = [card for card in hand.hand if CARDS[card].cash < 1]
+        discardChoices.sort() # ensure the tuples are ordered, so we can remove duplicates
+        tuples = []
+        for k in range(len(discardChoices) + 1):
+            tuples += itertools.combinations(discardChoices, k)
+        tuples = set(tuples) # remove duplicates
+        hands = []
+        for tup in tuples:
+            h = hand.clone()
+            for card in tup:
+                h.play(card)
+                h.cashOffset += 1
+            hands.append(h)
+        return hands
+
+    # def playHuman(self, hand):
+    #     print 'Choose %s:' % self.k
+    #     for i in range(self.k):
+    #         print 'Choice %s:' % (i + 1)
+    #         choice = choose([c.describe() for c in self.choices])
+    #         if choice < 0:
+    #             print 'Invalid choice'
+    #             return False
+    #         action = self.choices[choice]
+    #         action.playHuman(hand)
+    #     return True
+
+    def describe(self):
+        return 'Discard any number of cards. +$1 per card discarded.'
+
+class DiscardForCashTest(unittest.TestCase):
+    def test_noDiscardableCards(self):
+        action = DiscardForCash()
+        start = Hand()
+        start.hand = ['silver', 'silver']
+        hands = action.enumActions(start)
+        self.assertEquals(hands, [start])
+
+    def test_oneTypeOfDiscardableCard(self):
+        action = DiscardForCash()
+        start = Hand()
+        start.hand = ['province', 'province']
+        hands = action.enumActions(start)
+        self.assertEquals(len(hands), 3)
+
+        # discard one province
+        self.assertEquals(hands[0].hand, ['province'])
+        self.assertEquals(hands[0].played, ['province'])
+        self.assertEquals(hands[0].cashOffset, 1)
+
+        # discard both provinces
+        self.assertEquals(hands[1].hand, [])
+        self.assertEquals(hands[1].played, ['province', 'province'])
+        self.assertEquals(hands[1].cashOffset, 2)
+
+        # discard nothing
+        self.assertEquals(hands[2].hand, ['province', 'province'])
+        self.assertEquals(hands[2].played, [])
+        self.assertEquals(hands[2].cashOffset, 0)
+
+    def test_twoTypesOfDiscardableCard(self):
+        action = DiscardForCash()
+        start = Hand()
+        start.hand = ['province', 'nobles', 'province', 'nobles']
+        hands = action.enumActions(start)
+        self.assertEquals(len(hands), 10)
+
 def choose(choices):
     c = 1
     for choice in choices:
@@ -185,6 +255,7 @@ class ChooseTest(unittest.TestCase):
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 COURTYARD_ACTION = GainCards(3, replace=1)
 PAWN_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
+SECRET_CHAMBER_ACTION = DiscardForCash() # todo: reaction
 
 CARDS = {
     'copper': Card(cost=0, cash=1),
@@ -194,7 +265,8 @@ CARDS = {
     'province': Card(cost=8, victory=6),
     'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION),
     'courtyard': Card(cost=2, action=COURTYARD_ACTION),
-    'pawn': Card(cost=2, action=PAWN_ACTION)
+    'pawn': Card(cost=2, action=PAWN_ACTION),
+    'secret-chamber': Card(cost=2, action=SECRET_CHAMBER_ACTION)
 }
 
 class Deck:
@@ -299,9 +371,11 @@ class Hand:
             self.cashOffset = sourceHand.cashOffset
             self.deckActions = list(sourceHand.deckActions)
         else:
-            assert deck != None
-            self.hand = deck.deal(5)
-            log('hand', 'Dealt hand: %s', self.hand)
+            if deck:
+                self.hand = deck.deal(5)
+                log('hand', 'Dealt hand: %s', self.hand)
+            else:
+                self.hand = []
             self.played = []
             self.actions = 1;
             self.buys = 1;
@@ -310,7 +384,12 @@ class Hand:
         self.collateCards()
 
     def __repr__(self):
-        return 'Hand(hand=%r,actions=%r,buys=%r,deckActions=%r,played=%r,cashOffset=%r)' % (self.hand, self.actions, self.buys, self.deckActions, self.played, self.cashOffset)
+        return 'Hand(hand=%r,actions=%r,buys=%r,deckActions=%r,played=%r,cashOffset=%r)' % \
+            (self.hand, self.actions, self.buys, self.deckActions, self.played, self.cashOffset)
+
+    def __eq__(self, other):
+        return self.hand == other.hand and self.played == other.played and self.actions == other.actions and \
+            self.buys == other.buys and self.cashOffset == other.cashOffset and self.deckActions == other.deckActions
 
     def clone(self):
         return Hand(sourceHand=self)
