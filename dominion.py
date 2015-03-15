@@ -36,80 +36,80 @@ class Action(object):
         self.apply(hand)
         return [hand]
 
-class GainActions(Action):
-    def __init__(self, gain):
-        self.gain = gain
+class PlusActions(Action):
+    def __init__(self, actions):
+        self.actions = actions
 
     def apply(self, hand):
-        hand.actions += self.gain
+        hand.actions += self.actions
         return [hand]
 
     def describe(self):
-        return '+%s action(s)' % self.gain
+        return '+%s action(s)' % self.actions
 
-class GainCards(Action):
-    def __init__(self, gain, replace=0):
-        self.gain = gain
+class PlusCards(Action):
+    def __init__(self, draw, replace=0):
+        self.draw = draw
         self.replace = replace
 
     def apply(self, hand):
-        if self.canGain(hand):
-            hand.deckActions += ['draw'] * self.gain
+        if self.canDraw(hand):
+            hand.deckActions += ['draw'] * self.draw
             hand.deckActions += ['replace'] * self.replace
         return [hand]
 
     def describe(self):
-        desc = '+%s cards(s)' % self.gain
+        desc = '+%s cards(s)' % self.draw
         if self.replace:
             desc += ', replace %s' % self.replace
         return desc
 
-    def canGain(self, hand):
+    def canDraw(self, hand):
         return True
 
-class GainCardsIfNoActions(GainCards):
-    def __init__(self, gain, replace=0):
-        GainCards.__init__(self, gain, replace)
+class PlusCardsIfNoActions(PlusCards):
+    def __init__(self, draw, replace=0):
+        PlusCards.__init__(self, draw, replace)
 
-    def canGain(self, hand):
+    def canDraw(self, hand):
         return hand.countActions() == 0
 
-class GainCardsIfNoActionsTest(unittest.TestCase):
-    def test_gainIfNoActions(self):
-        action = GainCardsIfNoActions(1)
+class PlusCardsIfNoActionsTest(unittest.TestCase):
+    def test_cardsIfNoActions(self):
+        action = PlusCardsIfNoActions(1)
         start = Hand(cards=['silver'])
         hands = action.waysToPlayCard(start)
         self.assertEquals(len(hands), 1)
         self.assertEquals(hands[0].deckActions, ['draw'])
 
-    def test_noGainIfActions(self):
-        action = GainCardsIfNoActions(1)
+    def test_noCardsIfActions(self):
+        action = PlusCardsIfNoActions(1)
         start = Hand(cards=['pawn'])
         hands = action.waysToPlayCard(start)
         self.assertEquals(len(hands), 1)
         self.assertEquals(hands[0].deckActions, [])
 
-class GainBuys(Action):
-    def __init__(self, gain):
-        self.gain = gain
+class PlusBuys(Action):
+    def __init__(self, buys):
+        self.buys = buys
 
     def apply(self, hand):
-        hand.buys += self.gain
+        hand.buys += self.buys
         return [hand]
 
     def describe(self):
-        return '+%s buy(s)' % self.gain
+        return '+%s buy(s)' % self.buys
 
-class GainCash(Action):
-    def __init__(self, gain):
-        self.gain = gain
+class PlusCash(Action):
+    def __init__(self, cash):
+        self.cash = cash
 
     def apply(self, hand):
-        hand.cashOffset += self.gain
+        hand.cashOffset += self.cash
         return [hand]
 
     def describe(self):
-        return '+$%s' % self.gain
+        return '+$%s' % self.cash
 
 class DiscardForCash(Action):
     def waysToPlayCard(self, hand):
@@ -229,7 +229,7 @@ class Choose(Action):
 
 class ChooseTest(unittest.TestCase):
     def test_choose2(self):
-        action = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
+        action = Choose(k=2, choices=[PlusCards(1), PlusActions(1), PlusBuys(1), PlusCash(1)])
         start = Hand(Deck())
         hands = action.waysToPlayCard(start)
 
@@ -297,13 +297,13 @@ class TrashCards(Action):
     def describe(self):
         return 'Trash %s' % self.trash
 
-COURTYARD_ACTION = GainCards(3, replace=1)
-PAWN_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
+COURTYARD_ACTION = PlusCards(3, replace=1)
+PAWN_ACTION = Choose(k=2, choices=[PlusCards(1), PlusActions(1), PlusBuys(1), PlusCash(1)])
 SECRET_CHAMBER_ACTION = DiscardForCash() # todo: reaction
-GREAT_HALL_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1)])
-SHANTY_TOWN_ACTION = Choose(k=2, choices=[GainCardsIfNoActions(2), GainActions(2)])
-STEWARD_ACTION = Choose(k=1, choices=[GainCards(2), GainCash(2), TrashCards(2)])
-NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
+GREAT_HALL_ACTION = Choose(k=2, choices=[PlusCards(1), PlusActions(1)])
+SHANTY_TOWN_ACTION = Choose(k=2, choices=[PlusCardsIfNoActions(2), PlusActions(2)])
+STEWARD_ACTION = Choose(k=1, choices=[PlusCards(2), PlusCash(2), TrashCards(2)])
+NOBLES_ACTION = Choose([PlusCards(3), PlusActions(2)])
 
 CARDS = {
     'copper': Card(cost=0, cash=1),
@@ -564,12 +564,12 @@ class Hand:
         results.append(self)
         return results
 
-    def gainedCards(self):
+    def drawnCards(self):
         return self.deckActions.count('draw') - self.deckActions.count('replace');
 
     def expectedCash(self, deck):
         # could be smarter by replacing victory-only cards and counting cash value of all drawn cards
-        return self.countCash() + self.gainedCards() * deck.expectedCash()
+        return self.countCash() + self.drawnCards() * deck.expectedCash()
 
     def performDeckActions(self, deck, cardToReplace):
         for card in self.discarded:
@@ -593,7 +593,7 @@ class HandTest(unittest.TestCase):
         best = bestHand(hands, deck)
         self.assertEqual(best.played, ['nobles'] * 2)
         self.assertEqual(best.actions, 1)
-        self.assertEqual(best.gainedCards(), 3)
+        self.assertEqual(best.drawnCards(), 3)
 
 class Table:
     def __init__(self, stacks = DEFAULT_STACKS):
