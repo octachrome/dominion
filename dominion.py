@@ -27,7 +27,7 @@ class Card:
 #    Optional(TrashThis())
 #]))
 
-class Action:
+class Action(object):
     def describe(self):
         raise Error('All actions must implement describe')
 
@@ -59,8 +59,9 @@ class GainCards(Action):
         self.replace = replace
 
     def apply(self, hand):
-        hand.deckActions += ['draw'] * self.gain
-        hand.deckActions += ['replace'] * self.replace
+        if self.canGain(hand):
+            hand.deckActions += ['draw'] * self.gain
+            hand.deckActions += ['replace'] * self.replace
         return [hand]
 
     def describe(self):
@@ -68,6 +69,31 @@ class GainCards(Action):
         if self.replace:
             desc += ', replace %s' % self.replace
         return desc
+
+    def canGain(self, hand):
+        return True
+
+class GainCardsIfNoActions(GainCards):
+    def __init__(self, gain, replace=0):
+        GainCards.__init__(self, gain, replace)
+
+    def canGain(self, hand):
+        return hand.countActions() == 0
+
+class GainCardsIfNoActionsTest(unittest.TestCase):
+    def test_gainIfNoActions(self):
+        action = GainCardsIfNoActions(1)
+        start = Hand(cards=['silver'])
+        hands = action.waysToPlayCard(start)
+        self.assertEquals(len(hands), 1)
+        self.assertEquals(hands[0].deckActions, ['draw'])
+
+    def test_noGainIfActions(self):
+        action = GainCardsIfNoActions(1)
+        start = Hand(cards=['pawn'])
+        hands = action.waysToPlayCard(start)
+        self.assertEquals(len(hands), 1)
+        self.assertEquals(hands[0].deckActions, [])
 
 class GainBuys(Action):
     def __init__(self, gain):
@@ -127,15 +153,13 @@ class DiscardForCash(Action):
 class DiscardForCashTest(unittest.TestCase):
     def test_noDiscardableCards(self):
         action = DiscardForCash()
-        start = Hand()
-        start.hand = ['silver', 'silver']
+        start = Hand(cards=['silver', 'silver'])
         hands = action.waysToPlayCard(start)
         self.assertEquals(hands, [start])
 
     def test_oneTypeOfDiscardableCard(self):
         action = DiscardForCash()
-        start = Hand()
-        start.hand = ['province', 'province']
+        start = Hand(cards=['province', 'province'])
         hands = action.waysToPlayCard(start)
         self.assertEquals(len(hands), 3)
 
@@ -156,8 +180,7 @@ class DiscardForCashTest(unittest.TestCase):
 
     def test_twoTypesOfDiscardableCard(self):
         action = DiscardForCash()
-        start = Hand()
-        start.hand = ['province', 'nobles', 'province', 'nobles']
+        start = Hand(cards=['province', 'nobles', 'province', 'nobles'])
         hands = action.waysToPlayCard(start)
         self.assertEquals(len(hands), 9)
 
@@ -257,6 +280,7 @@ COURTYARD_ACTION = GainCards(3, replace=1)
 PAWN_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
 SECRET_CHAMBER_ACTION = DiscardForCash() # todo: reaction
 GREAT_HALL_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1)])
+SHANTY_TOWN_ACTION = Choose(k=2, choices=[GainCardsIfNoActions(2), GainActions(2)])
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 
 CARDS = {
@@ -270,6 +294,8 @@ CARDS = {
     'pawn': Card(cost=2, action=PAWN_ACTION),
     'secret-chamber': Card(cost=2, action=SECRET_CHAMBER_ACTION),
     'great-hall': Card(cost=3, victory=1, action=GREAT_HALL_ACTION),
+    # todo: masquerade
+    'shanty-town': Card(cost=3, action=SHANTY_TOWN_ACTION),
     'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION),
 }
 
@@ -287,6 +313,7 @@ DEFAULT_STACKS = {
     'pawn': ACTION_COUNT,
     'secret-chamber': ACTION_COUNT,
     'great-hall': VICTORY_COUNT,
+    'shanty-town': ACTION_COUNT,
     'nobles': VICTORY_COUNT,
 }
 
@@ -382,7 +409,7 @@ class DeckTest(unittest.TestCase):
         self.assertEqual(deck.expectedCash(), 1)
 
 class Hand:
-    def __init__(self, deck=None, sourceHand=None):
+    def __init__(self, deck=None, sourceHand=None, cards=[]):
         if sourceHand:
             assert deck == None
             self.hand = list(sourceHand.hand)
@@ -397,7 +424,8 @@ class Hand:
                 self.hand = deck.deal(5)
                 log('hand', 'Dealt hand: %s', self.hand)
             else:
-                self.hand = []
+                # This mode is for testing
+                self.hand = cards
             self.played = []
             self.actions = 1;
             self.buys = 1;
