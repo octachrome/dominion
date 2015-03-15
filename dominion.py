@@ -21,12 +21,6 @@ class Card:
         assert self.action
         return self.action.waysToPlayCard(hand)
 
-#miningVillage = Card('mining-village', action=Choose(3, [
-#    GainCards(1),
-#    GainActions(2),
-#    Optional(TrashThis())
-#]))
-
 class Action(object):
     def describe(self):
         raise Error('All actions must implement describe')
@@ -229,7 +223,8 @@ class Choose(Action):
                 print 'Invalid choice'
                 return False
             action = self.choices[choice]
-            action.playHuman(hand)
+            if not action.playHuman(hand):
+                return False
         return True
 
 class ChooseTest(unittest.TestCase):
@@ -276,12 +271,38 @@ class ChooseTest(unittest.TestCase):
         self.assertEquals(hands[5].buys, 2)
         self.assertEquals(hands[5].cashOffset, 1)
 
+class TrashCards(Action):
+    def __init__(self, trash):
+        self.trash = trash
+
+    def waysToPlayCard(self, hand):
+        # todo: choose which cards to trash
+        return [hand]
+
+    def playHuman(self, hand):
+        print 'Enter cards to trash separated by space'
+        inp = raw_input('> ')
+        cards = inp.split()
+        if len(cards) > self.trash:
+            print 'You may only trash %s cards' % self.trash
+            return False
+        try:
+            for c in cards:
+                hand.trash(c)
+            return True
+        except ValueError:
+            print 'Your hand does not contain those cards'
+            return False
+
+    def describe(self):
+        return 'Trash %s' % self.trash
+
 COURTYARD_ACTION = GainCards(3, replace=1)
 PAWN_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
 SECRET_CHAMBER_ACTION = DiscardForCash() # todo: reaction
 GREAT_HALL_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1)])
 SHANTY_TOWN_ACTION = Choose(k=2, choices=[GainCardsIfNoActions(2), GainActions(2)])
-STEWARD_ACTION = Choose(k=1, choices=[GainCards(2), GainCash(2)]) # todo: trash
+STEWARD_ACTION = Choose(k=1, choices=[GainCards(2), GainCash(2), TrashCards(2)])
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 
 CARDS = {
@@ -489,6 +510,10 @@ class Hand:
         self.hand.remove(card)
         self.collated[card] -= 1
         self.discarded.append(card)
+
+    def trash(self, card):
+        self.hand.remove(card)
+        self.collated[card] -= 1
 
     def discardHand(self):
         cards = list(self.hand)
