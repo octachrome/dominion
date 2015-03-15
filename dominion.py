@@ -141,17 +141,17 @@ class DiscardForCashTest(unittest.TestCase):
 
         # discard one province
         self.assertEquals(hands[0].hand, ['province'])
-        self.assertEquals(hands[0].played, ['province'])
+        self.assertEquals(hands[0].discarded, ['province'])
         self.assertEquals(hands[0].cashOffset, 1)
 
         # discard both provinces
         self.assertEquals(hands[1].hand, [])
-        self.assertEquals(hands[1].played, ['province', 'province'])
+        self.assertEquals(hands[1].discarded, ['province', 'province'])
         self.assertEquals(hands[1].cashOffset, 2)
 
         # discard nothing
         self.assertEquals(hands[2].hand, ['province', 'province'])
-        self.assertEquals(hands[2].played, [])
+        self.assertEquals(hands[2].discarded, [])
         self.assertEquals(hands[2].cashOffset, 0)
 
     def test_twoTypesOfDiscardableCard(self):
@@ -159,7 +159,7 @@ class DiscardForCashTest(unittest.TestCase):
         start = Hand()
         start.hand = ['province', 'nobles', 'province', 'nobles']
         hands = action.enumActions(start)
-        self.assertEquals(len(hands), 10)
+        self.assertEquals(len(hands), 9)
 
 def choose(choices):
     c = 1
