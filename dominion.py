@@ -17,9 +17,9 @@ class Card:
         self.victory = victory
         self.action = action
 
-    def enumActions(self, hand):
+    def waysToPlayCard(self, hand):
         assert self.action
-        return self.action.enumActions(hand)
+        return self.action.waysToPlayCard(hand)
 
 #miningVillage = Card('mining-village', action=Choose(3, [
 #    GainCards(1),
@@ -38,7 +38,7 @@ class Action:
         self.apply(hand)
         return True
 
-    def enumActions(self, hand):
+    def waysToPlayCard(self, hand):
         self.apply(hand)
         return [hand]
 
@@ -92,7 +92,7 @@ class GainCash(Action):
         return '+$%s' % self.gain
 
 class DiscardForCash(Action):
-    def enumActions(self, hand):
+    def waysToPlayCard(self, hand):
         # No point discarding cards already worth a dollar
         discardChoices = [card for card in hand.hand if CARDS[card].cash < 1]
         discardChoices.sort() # ensure the tuples are ordered, so we can remove duplicates
@@ -129,14 +129,14 @@ class DiscardForCashTest(unittest.TestCase):
         action = DiscardForCash()
         start = Hand()
         start.hand = ['silver', 'silver']
-        hands = action.enumActions(start)
+        hands = action.waysToPlayCard(start)
         self.assertEquals(hands, [start])
 
     def test_oneTypeOfDiscardableCard(self):
         action = DiscardForCash()
         start = Hand()
         start.hand = ['province', 'province']
-        hands = action.enumActions(start)
+        hands = action.waysToPlayCard(start)
         self.assertEquals(len(hands), 3)
 
         # discard one province
@@ -158,7 +158,7 @@ class DiscardForCashTest(unittest.TestCase):
         action = DiscardForCash()
         start = Hand()
         start.hand = ['province', 'nobles', 'province', 'nobles']
-        hands = action.enumActions(start)
+        hands = action.waysToPlayCard(start)
         self.assertEquals(len(hands), 9)
 
 def choose(choices):
@@ -178,7 +178,7 @@ class Choose(Action):
         self.choices = choices
         self.k = k
 
-    def enumActions(self, hand):
+    def waysToPlayCard(self, hand):
         allHands = []
         tuples = itertools.combinations(self.choices, self.k)
         for tup in tuples:
@@ -186,7 +186,7 @@ class Choose(Action):
             for choice in tup:
                 nextHands = []
                 for h in hands:
-                    nextHands += choice.enumActions(h)
+                    nextHands += choice.waysToPlayCard(h)
                 hands = nextHands
             allHands += hands
         return allHands
@@ -213,7 +213,7 @@ class ChooseTest(unittest.TestCase):
     def test_choose2(self):
         action = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
         start = Hand(Deck())
-        hands = action.enumActions(start)
+        hands = action.waysToPlayCard(start)
 
         self.assertEquals(len(hands), 6)
 
@@ -403,12 +403,13 @@ class Hand:
         self.collateCards()
 
     def __repr__(self):
-        return 'Hand(hand=%r,actions=%r,buys=%r,deckActions=%r,played=%r,cashOffset=%r)' % \
-            (self.hand, self.actions, self.buys, self.deckActions, self.played, self.cashOffset)
+        return 'Hand(hand=%r,actions=%r,buys=%r,deckActions=%r,played=%r,cashOffset=%r,discarded=%r)' % \
+            (self.hand, self.actions, self.buys, self.deckActions, self.played, self.cashOffset, self.discarded)
 
     def __eq__(self, other):
         return self.hand == other.hand and self.played == other.played and self.actions == other.actions and \
-            self.buys == other.buys and self.cashOffset == other.cashOffset and self.deckActions == other.deckActions
+            self.buys == other.buys and self.cashOffset == other.cashOffset and self.deckActions == other.deckActions and \
+            self.discarded == other.discarded
 
     def clone(self):
         return Hand(sourceHand=self)
@@ -478,7 +479,7 @@ class Hand:
     def choices(self):
         return [card for card in self.collated if self.collated[card] > 0]
 
-    def enumActions(self):
+    def waysToPlayHand(self):
         if self.actions == 0 or self.countActions() == 0:
             return [self]
         # we have an action to use, and a card to play it with
@@ -492,11 +493,11 @@ class Hand:
                 hand.play(c)
                 hand.actions -= 1
                 # list of possible hands resulting from playing the card in different ways
-                possibleHands = card.enumActions(hand)
+                possibleHands = card.waysToPlayCard(hand)
                 # now play more hands
                 for possibleHand in possibleHands:
                     # continue to play more actions if there are any
-                    results += possibleHand.enumActions()
+                    results += possibleHand.waysToPlayHand()
 
         # there is always the option to do nothing
         results.append(self)
@@ -527,7 +528,7 @@ class HandTest(unittest.TestCase):
     def test_bestHand(self):
         deck = Deck({'copper': 3, 'nobles': 2})
         hand = Hand(deck)
-        hands = hand.enumActions()
+        hands = hand.waysToPlayHand()
         best = bestHand(hands, deck)
         self.assertEqual(best.played, ['nobles'] * 2)
         self.assertEqual(best.actions, 1)
@@ -593,10 +594,15 @@ class Player:
     def playActions(self, hand):
         # this is too eager - it plays several actions without determining the outcome (cards drawn) after the first
         while hand.actions > 0 and hand.countActions() > 0:
-            results = hand.enumActions()
-            hand = bestHand(results, self.deck)
-            log('play', 'Played hand: %r' % hand)
-            hand.performDeckActions(self.deck, self.cardToReplace)
+            results = hand.waysToPlayHand()
+            best = bestHand(results, self.deck)
+            if best == hand:
+                log('play', 'No further actions')
+                return hand
+            else:
+                log('play', 'Played hand: %r' % hand)
+                hand.performDeckActions(self.deck, self.cardToReplace)
+                hand = best
         return hand
 
     def cardToReplace(self, hand):
@@ -980,14 +986,15 @@ if __name__ == '__main__':
         unittest.main(__name__, None, [sys.argv[0]])
     elif command == 'play':
         GameCmd().start({
-            'province': (5, 0),
+            'province': (7, 0),
             'copper': (0, 1),
-            'gold': (2, 0),
-            'pawn': (2, 0),
-            'courtyard': (1, 1),
-            'estate': (2, 0),
-            'nobles': (4, 1),
-            'silver': (2, 0)
+            'gold': (7, 1),
+            'pawn': (4, 0),
+            'courtyard': (1, 2),
+            'secret-chamber': (4, 0),
+            'estate': (5, 1),
+            'nobles': (6, 1),
+            'silver': (6, 1)
         })
     elif command == 'learn':
         learn()
