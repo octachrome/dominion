@@ -281,6 +281,7 @@ PAWN_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), Ga
 SECRET_CHAMBER_ACTION = DiscardForCash() # todo: reaction
 GREAT_HALL_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1)])
 SHANTY_TOWN_ACTION = Choose(k=2, choices=[GainCardsIfNoActions(2), GainActions(2)])
+STEWARD_ACTION = Choose(k=1, choices=[GainCards(2), GainCash(2)]) # todo: trash
 NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 
 CARDS = {
@@ -296,6 +297,8 @@ CARDS = {
     'great-hall': Card(cost=3, victory=1, action=GREAT_HALL_ACTION),
     # todo: masquerade
     'shanty-town': Card(cost=3, action=SHANTY_TOWN_ACTION),
+    'steward': Card(cost=3, action=STEWARD_ACTION),
+    # todo: swindler
     'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION),
 }
 
@@ -314,6 +317,7 @@ DEFAULT_STACKS = {
     'secret-chamber': ACTION_COUNT,
     'great-hall': VICTORY_COUNT,
     'shanty-town': ACTION_COUNT,
+    'steward': ACTION_COUNT,
     'nobles': VICTORY_COUNT,
 }
 
@@ -814,16 +818,19 @@ def bestOf(chromes, games=500):
             wins[result] += 1
     print wins
 
+def randomChrome():
+    chrome = {}
+    for c in CARDS:
+        if c == 'copper':
+            chrome[c] = (0,0)
+        else:
+            chrome[c] = (random.randint(0, 5),0)
+    return chrome
+
 def randomPopulation(size=20):
     chromes = []
     for i in range(size):
-        chrome = {}
-        for c in CARDS:
-            if c == 'copper':
-                chrome[c] = (0,0)
-            else:
-                chrome[c] = (random.randint(0, 5),0)
-        chromes.append(chrome)
+        chromes.append(randomChrome())
     return chromes
 
 def fightAll(chromes):
@@ -846,7 +853,12 @@ def fightAll(chromes):
 def breed(parent1, parent2):
     child = {}
     for card in CARDS:
-        child[card] = random.choice([parent1[card], parent2[card]])
+        if card in parent1 and card in parent2:
+            child[card] = random.choice([parent1[card], parent2[card]])
+        elif card in parent1:
+            child[card] = parent1[card]
+        elif card in parent2:
+            child[card] = parent2[card]
     return child
 
 def nextGeneration(chromes, wins):
@@ -980,6 +992,18 @@ class GameCmd(cmd.Cmd):
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
 
+FITTEST_SO_FAR = {'province': (10, 1), 'copper': (2, 1), 'estate': (0, 0), 'pawn': (0, 0), 'shanty-town': (3, 1),
+    'great-hall': (3, 0), 'duchy': (4, 0), 'steward': (4, 0), 'courtyard': (1, 3), 'secret-chamber': (3, 2),
+    'nobles': (4, 0), 'gold': (6, 0), 'silver': (5, 0)}
+
+# simple baseline strategy
+GOLD_N_NOBLES = {
+    'silver': (1,0),
+    'gold': (2,0),
+    'nobles': (2,0),
+    'province': (3,3)
+}
+
 def learn():
     # random.seed(1)
 
@@ -991,6 +1015,7 @@ def learn():
     logging.getLogger('play').setLevel(logging.WARNING)
 
     chromes = randomPopulation(10)
+    chromes[0] = FITTEST_SO_FAR
 
     for i in range(20):
         wins = fightAll(chromes)
@@ -1001,33 +1026,18 @@ def learn():
         # keep the fittest without breeding or mutation
         chromes[0] = f
 
-    print 'Fittest vs. simple human strategy:'
-    bestOf([
-        chromes[0],
-        {
-            'silver': (1,0),
-            'gold': (2,0),
-            'nobles': (2,0),
-            'province': (3,3)
-        }
-    ])
+    print 'New fittest vs. previous:'
+    bestOf([chromes[0], FITTEST_SO_FAR])
+
+    print 'New fittest vs. simple human strategy:'
+    bestOf([chromes[0], GOLD_N_NOBLES])
 
 if __name__ == '__main__':
     command = sys.argv[1] if len(sys.argv) > 1 else 'play'
     if command == 'test':
         unittest.main(__name__, None, [sys.argv[0]])
     elif command == 'play':
-        GameCmd().start({
-            'province': (7, 0),
-            'copper': (0, 1),
-            'gold': (7, 1),
-            'pawn': (4, 0),
-            'courtyard': (1, 2),
-            'secret-chamber': (4, 0),
-            'estate': (5, 1),
-            'nobles': (6, 1),
-            'silver': (6, 1)
-        })
+        GameCmd().start(FITTEST_SO_FAR)
     elif command == 'learn':
         learn()
     else:
