@@ -103,22 +103,22 @@ class DiscardForCash(Action):
         for tup in tuples:
             h = hand.clone()
             for card in tup:
-                h.play(card)
+                h.discard(card)
                 h.cashOffset += 1
             hands.append(h)
         return hands
 
-    # def playHuman(self, hand):
-    #     print 'Choose %s:' % self.k
-    #     for i in range(self.k):
-    #         print 'Choice %s:' % (i + 1)
-    #         choice = choose([c.describe() for c in self.choices])
-    #         if choice < 0:
-    #             print 'Invalid choice'
-    #             return False
-    #         action = self.choices[choice]
-    #         action.playHuman(hand)
-    #     return True
+    def playHuman(self, hand):
+        print 'Enter cards to discard separated by space'
+        inp = raw_input('> ')
+        try:
+            for c in inp.split():
+                hand.discard(c)
+                hand.cashOffset += 1
+            return True
+        except ValueError:
+            print 'Your hand does not contain those cards'
+            return False
 
     def describe(self):
         return 'Discard any number of cards. +$1 per card discarded.'
@@ -370,6 +370,7 @@ class Hand:
             self.buys = sourceHand.buys
             self.cashOffset = sourceHand.cashOffset
             self.deckActions = list(sourceHand.deckActions)
+            self.discarded = list(sourceHand.discarded)
         else:
             if deck:
                 self.hand = deck.deal(5)
@@ -381,6 +382,7 @@ class Hand:
             self.buys = 1;
             self.cashOffset = 0;
             self.deckActions = []
+            self.discarded = []
         self.collateCards()
 
     def __repr__(self):
@@ -415,6 +417,9 @@ class Hand:
                 actions += self.collated[card]
         return actions
 
+    def getActions(self):
+        return [card for card in self.collated if CARDS[card].action]
+
     def count(self, card):
         if card in self.collated:
             return self.collated[card]
@@ -426,20 +431,15 @@ class Hand:
         self.collated[card] -= 1
         self.played.append(card)
 
-    def discard(self, deck, card):
+    def discard(self, card):
         self.hand.remove(card)
         self.collated[card] -= 1
-        deck.discard(card)
+        self.discarded.append(card)
 
-    def discardHand(self, deck):
+    def discardHand(self):
         cards = list(self.hand)
         for card in cards:
-            self.discard(deck, card)
-
-    def discardPlayed(self, deck):
-        for card in self.played:
-            deck.discard(card)
-        self.played = []
+            self.discard(card)
 
     def draw(self, deck, count):
         cards = deck.deal(count)
@@ -448,8 +448,15 @@ class Hand:
         self.collateCards()
 
     def finish(self, deck):
-        self.discardPlayed(deck)
-        self.discardHand(deck)
+        self.discardHand()
+        for card in self.discarded + self.played:
+            deck.discard(card)
+        self.discarded = []
+        self.played = []
+        self.actions = 0;
+        self.buys = 0;
+        self.cashOffset = 0;
+        self.deckActions = []
 
     def choices(self):
         return [card for card in self.collated if self.collated[card] > 0]
@@ -486,6 +493,9 @@ class Hand:
         return self.countCash() + self.gainedCards() * deck.expectedCash()
 
     def performDeckActions(self, deck, cardToReplace):
+        for card in self.discarded:
+            deck.discard(card)
+        self.discarded = []
         for action in self.deckActions:
             if action == 'draw':
                 self.draw(deck, 1)
@@ -530,6 +540,9 @@ class Table:
         assert self.count(card) > 0
         self.stacks[card] -= 1
         deck.gain(card)
+
+    def availableCards(self):
+        return [k for k in self.stacks if self.stacks[k] > 0]
 
 def bestHand(hands, deck):
     best = None
@@ -678,8 +691,10 @@ class HumanPlayer(Player):
         return True
 
     def play(self, cardName):
-        if not cardName in CARDS:
-            print 'Unknown card'
+        if self.hand.actions == 0:
+            print 'No more actions'
+        elif not cardName in self.hand.getActions():
+            print 'Cannot play this card'
         else:
             card = CARDS[cardName]
             if card.action:
@@ -825,7 +840,21 @@ def fittest(chromes, wins):
 
 class GameCmd(cmd.Cmd):
     def start(self, chrome):
-        self.table = Table({'silver': 100, 'gold': 100, 'nobles': 8, 'province': 8, 'courtyard': 10, 'pawn': 10})
+        UNLIMITED = 100
+        VICTORY_COUNT = 8
+        ACTION_COUNT = 10
+
+        self.table = Table({
+            'copper': UNLIMITED,
+            'silver': UNLIMITED,
+            'gold': UNLIMITED,
+            'estate': VICTORY_COUNT,
+            'province': VICTORY_COUNT,
+            'nobles': VICTORY_COUNT,
+            'courtyard': ACTION_COUNT,
+            'pawn': ACTION_COUNT,
+            'secret-chamber': ACTION_COUNT
+        })
         self.human = HumanPlayer(self.table)
         self.computer = Player(self.table, chrome)
 
@@ -881,9 +910,15 @@ class GameCmd(cmd.Cmd):
         self.human.play(cardName)
         return self.checkTurnEnd()
 
+    def complete_play(self, text, line, begidx, endidx):
+        return self.findWithPrefix(text, set(self.human.hand.getActions()))
+
     def do_buy(self, card):
         self.human.buy(card)
         return self.checkTurnEnd()
+
+    def complete_buy(self, text, line, begidx, endidx):
+        return self.findWithPrefix(text, self.table.availableCards())
 
     def do_describe(self, cardName):
         if not cardName in CARDS:
@@ -898,6 +933,9 @@ class GameCmd(cmd.Cmd):
                 print 'Cash value: $%s' % card.cash
             if card.action:
                 print card.action.describe()
+
+    def findWithPrefix(self, prefix, options):
+        return [o for o in options if o.startswith(prefix)]
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
 
