@@ -253,37 +253,41 @@ class ChooseTest(unittest.TestCase):
         self.assertEquals(hands[5].buys, 2)
         self.assertEquals(hands[5].cashOffset, 1)
 
-NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 COURTYARD_ACTION = GainCards(3, replace=1)
 PAWN_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1), GainBuys(1), GainCash(1)])
 SECRET_CHAMBER_ACTION = DiscardForCash() # todo: reaction
+GREAT_HALL_ACTION = Choose(k=2, choices=[GainCards(1), GainActions(1)])
+NOBLES_ACTION = Choose([GainCards(3), GainActions(2)])
 
 CARDS = {
     'copper': Card(cost=0, cash=1),
     'silver': Card(cost=3, cash=2),
     'gold': Card(cost=6, cash=3),
     'estate': Card(cost=2, victory=1),
+    'duchy': Card(cost=5, victory=3),
     'province': Card(cost=8, victory=6),
-    'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION),
     'courtyard': Card(cost=2, action=COURTYARD_ACTION),
     'pawn': Card(cost=2, action=PAWN_ACTION),
-    'secret-chamber': Card(cost=2, action=SECRET_CHAMBER_ACTION)
+    'secret-chamber': Card(cost=2, action=SECRET_CHAMBER_ACTION),
+    'great-hall': Card(cost=3, victory=1, action=GREAT_HALL_ACTION),
+    'nobles': Card(cost=6, victory=2, action=NOBLES_ACTION),
 }
 
-UNLIMITED = 100
 VICTORY_COUNT = 8
 ACTION_COUNT = 10
 
 DEFAULT_STACKS = {
-    'copper': UNLIMITED,
-    'silver': UNLIMITED,
-    'gold': UNLIMITED,
+    'copper': 60,
+    'silver': 40,
+    'gold': 30,
     'estate': VICTORY_COUNT,
+    'duchy': VICTORY_COUNT,
     'province': VICTORY_COUNT,
-    'nobles': VICTORY_COUNT,
     'courtyard': ACTION_COUNT,
     'pawn': ACTION_COUNT,
-    'secret-chamber': ACTION_COUNT
+    'secret-chamber': ACTION_COUNT,
+    'great-hall': VICTORY_COUNT,
+    'nobles': VICTORY_COUNT,
 }
 
 class Deck:
