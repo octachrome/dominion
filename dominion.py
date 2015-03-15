@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import sys
 import random
 import logging
 import unittest
@@ -269,6 +270,22 @@ CARDS = {
     'secret-chamber': Card(cost=2, action=SECRET_CHAMBER_ACTION)
 }
 
+UNLIMITED = 100
+VICTORY_COUNT = 8
+ACTION_COUNT = 10
+
+DEFAULT_STACKS = {
+    'copper': UNLIMITED,
+    'silver': UNLIMITED,
+    'gold': UNLIMITED,
+    'estate': VICTORY_COUNT,
+    'province': VICTORY_COUNT,
+    'nobles': VICTORY_COUNT,
+    'courtyard': ACTION_COUNT,
+    'pawn': ACTION_COUNT,
+    'secret-chamber': ACTION_COUNT
+}
+
 class Deck:
     def __init__(self, cards={'copper': 7, 'estate': 3}):
         deck = []
@@ -517,7 +534,7 @@ class HandTest(unittest.TestCase):
         self.assertEqual(best.gainedCards(), 3)
 
 class Table:
-    def __init__(self, stacks):
+    def __init__(self, stacks = DEFAULT_STACKS):
         self.stacks = dict(stacks)
 
     def isGameEnd(self):
@@ -725,7 +742,7 @@ class HumanPlayer(Player):
 MAX_HANDS = 100
 
 def playGame(chromes, firstPlayer=0):
-    table = Table({'silver': 100, 'gold': 100, 'nobles': 8, 'province': 8, 'courtyard': 10})
+    table = Table()
     players = []
     for chrome in chromes:
         players.append(Player(table, chrome))
@@ -840,21 +857,7 @@ def fittest(chromes, wins):
 
 class GameCmd(cmd.Cmd):
     def start(self, chrome):
-        UNLIMITED = 100
-        VICTORY_COUNT = 8
-        ACTION_COUNT = 10
-
-        self.table = Table({
-            'copper': UNLIMITED,
-            'silver': UNLIMITED,
-            'gold': UNLIMITED,
-            'estate': VICTORY_COUNT,
-            'province': VICTORY_COUNT,
-            'nobles': VICTORY_COUNT,
-            'courtyard': ACTION_COUNT,
-            'pawn': ACTION_COUNT,
-            'secret-chamber': ACTION_COUNT
-        })
+        self.table = Table()
         self.human = HumanPlayer(self.table)
         self.computer = Player(self.table, chrome)
 
@@ -939,21 +942,7 @@ class GameCmd(cmd.Cmd):
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
 
-if __name__ == '__main__':
-    # unittest.main()
-
-    GameCmd().start({
-        'province': (5, 0),
-        'copper': (0, 1),
-        'gold': (2, 0),
-        'pawn': (2, 0),
-        'courtyard': (1, 1),
-        'estate': (2, 0),
-        'nobles': (4, 1),
-        'silver': (2, 0)
-    })
-
-else:
+def learn():
     # random.seed(1)
 
     logging.getLogger('hand').setLevel(logging.WARNING)
@@ -984,3 +973,24 @@ else:
             'province': (3,3)
         }
     ])
+
+if __name__ == '__main__':
+    command = sys.argv[1] if len(sys.argv) > 1 else 'play'
+    if command == 'test':
+        unittest.main(__name__, None, [sys.argv[0]])
+    elif command == 'play':
+        GameCmd().start({
+            'province': (5, 0),
+            'copper': (0, 1),
+            'gold': (2, 0),
+            'pawn': (2, 0),
+            'courtyard': (1, 1),
+            'estate': (2, 0),
+            'nobles': (4, 1),
+            'silver': (2, 0)
+        })
+    elif command == 'learn':
+        learn()
+    else:
+        print 'Unknown command %s' % command
+        print 'Usage: dominion.py play|learn|test'
